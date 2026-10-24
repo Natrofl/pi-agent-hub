@@ -1,0 +1,23 @@
+{
+  "name": "pi-agent-hub",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node --experimental-strip-types --disable-warning=ExperimentalWarning src/server.ts",
+    "check": "tsc -p ."
+  },
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@earendil-works/chord": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-durable": "1.4.0",
+    "@earendil-works/pi-env": "1.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}

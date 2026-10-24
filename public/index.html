@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pi-agent-hub</title>
+<style>
+	:root {
+		--bg: #f6f6f4; --panel: #ffffff; --text: #1c1c1a; --muted: #6b6b66; --line: #e2e2dd;
+		--accent: #2f5bd3; --user: #eef2fd; --tool: #f2f2ee; --err: #b42318; --ok: #1f7a3d; --busy: #c27c0e;
+		--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root {
+			--bg: #151514; --panel: #1d1d1b; --text: #e8e8e4; --muted: #9a9a93; --line: #2e2e2b;
+			--accent: #7d9cf0; --user: #1f2740; --tool: #242422; --err: #f97066; --ok: #4ade80; --busy: #f5b544;
+		}
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, sans-serif; }
+	.app { display: grid; grid-template-columns: 280px 1fr; height: 100dvh; }
+	aside { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+	aside header { padding: 16px; border-bottom: 1px solid var(--line); }
+	h1 { font-size: 16px; margin: 0 0 4px; }
+	.muted { color: var(--muted); font-size: 12px; }
+	label { display: block; font-size: 12px; color: var(--muted); margin: 12px 0 4px; }
+	input, textarea, button { font: inherit; color: inherit; }
+	input, textarea { width: 100%; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+	button { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+	button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+	button:disabled { opacity: .5; cursor: default; }
+	.row { display: flex; gap: 8px; align-items: center; }
+	#agents { list-style: none; margin: 0; padding: 8px; overflow: auto; flex: 1; }
+	#agents li { padding: 8px 10px; border-radius: 6px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+	#agents li:hover { background: var(--bg); }
+	#agents li.active { background: var(--user); }
+	.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); flex: none; }
+	.dot.busy { background: var(--busy); }
+	main { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+	.top { padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+	.top .name { font-weight: 600; }
+	#status { margin-left: auto; font-size: 12px; color: var(--muted); }
+	#log { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+	.msg { max-width: 900px; width: 100%; }
+	.user { background: var(--user); border-radius: 8px; padding: 8px 12px; }
+	.author { font-size: 12px; font-weight: 600; color: var(--accent); }
+	.text { white-space: pre-wrap; overflow-wrap: anywhere; }
+	.call { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+	.call b { color: var(--text); }
+	details.tool, .running { background: var(--tool); border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+	details.tool summary { cursor: pointer; color: var(--muted); }
+	details.tool.err summary, .err-text { color: var(--err); }
+	pre { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; max-height: 360px; overflow: auto; }
+	.notice { color: var(--muted); font-size: 12px; text-align: center; }
+	.cut { opacity: .55; border-left: 2px solid var(--line); padding-left: 10px; }
+	.cut .notice { text-align: left; }
+	.empty { color: var(--muted); margin: auto; text-align: center; }
+	form.composer { border-top: 1px solid var(--line); background: var(--panel); padding: 12px 16px; display: grid; gap: 8px; }
+	form.composer textarea { resize: vertical; min-height: 60px; }
+	form.composer .row { justify-content: space-between; flex-wrap: wrap; }
+	.check { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--muted); margin: 0; }
+	.check input { width: auto; }
+	@media (max-width: 720px) {
+		.app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+		aside { border-right: 0; border-bottom: 1px solid var(--line); max-height: 40dvh; }
+	}
+</style>
+</head>
+<body>
+<div class="app">
+	<aside>
+		<header>
+			<h1>pi-agent-hub</h1>
+			<div class="muted" id="model"></div>
+			<label for="me">Ваше имя</label>
+			<input id="me" placeholder="например, ann" maxlength="100">
+			<label for="newName">Новый агент</label>
+			<form class="row" id="newAgent">
+				<input id="newName" placeholder="название проекта" maxlength="100">
+				<button>+</button>
+			</form>
+		</header>
+		<ul id="agents"></ul>
+	</aside>
+	<main>
+		<div class="top">
+			<span class="name" id="title">Выберите агента</span>
+			<span class="muted" id="container"></span>
+			<span id="status"></span>
+			<button class="secondary" id="stop" disabled>Стоп</button>
+		</div>
+		<div id="log"><div class="empty">Агенты переживают перезапуск сервера: закройте вкладку, убейте процесс, вернитесь — работа продолжится.</div></div>
+		<form class="composer" id="composer">
+			<textarea id="input" placeholder="Сообщение агенту. Enter — отправить, Shift+Enter — новая строка" disabled></textarea>
+			<div class="row">
+				<label class="check"><input type="checkbox" id="steer"> вмешаться в текущую работу, а не ждать очереди</label>
+				<button id="send" disabled>Отправить</button>
+			</div>
+		</form>
+	</main>
+</div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const store = {
+	get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+	set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+};
+let token = store.get("hub-token") ?? new URLSearchParams(location.search).get("token") ?? "";
+$("me").value = store.get("hub-me") ?? "";
+$("me").addEventListener("input", () => store.set("hub-me", $("me").value.trim()));
+
+async function api(path, options = {}) {
+	const headers = { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) };
+	const res = await fetch(path, { ...options, headers });
+	if (res.status === 401) {
+		token = prompt("Токен доступа к хабу") ?? "";
+		store.set("hub-token", token);
+		return api(path, options);
+	}
+	const body = await res.json().catch(() => ({}));
+	if (!res.ok) throw new Error(body.error ?? res.statusText);
+	return body;
+}
+
+// ---- agent list ----
+let agents = [];
+let current = null;
+
+async function loadAgents() {
+	const data = await api("/api/agents");
+	$("model").textContent = `модель: ${data.model}`;
+	agents = data.agents.sort((a, b) => a.createdAt - b.createdAt);
+	const list = $("agents");
+	list.replaceChildren(...agents.map((agent) => {
+		const li = document.createElement("li");
+		li.className = agent.id === current?.id ? "active" : "";
+		const dot = document.createElement("span");
+		dot.className = `dot${agent.busy ? " busy" : ""}`;
+		const name = document.createElement("span");
+		name.textContent = agent.name;
+		li.append(dot, name);
+		li.onclick = () => select(agent);
+		return li;
+	}));
+}
+
+$("newAgent").addEventListener("submit", async (event) => {
+	event.preventDefault();
+	const name = $("newName").value.trim();
+	if (!name) return;
+	$("newName").value = "";
+	const agent = await api("/api/agents", { method: "POST", body: JSON.stringify({ name }) }).catch((e) => alert(e.message));
+	await loadAgents();
+	if (agent) select(agents.find((a) => a.id === agent.id));
+});
+
+// ---- conversation state, rebuilt from the event stream ----
+let state = null;
+let source = null;
+
+function freshState() {
+	return { entries: [], ids: new Set(), stream: null, tools: new Map(), busy: false, inbox: [], retry: null, failure: null, usage: null };
+}
+
+function select(agent) {
+	if (!agent) return;
+	current = agent;
+	location.hash = String(agent.id);
+	$("title").textContent = agent.name;
+	$("container").textContent = agent.container;
+	for (const el of [$("input"), $("send"), $("stop")]) el.disabled = false;
+	source?.close();
+	state = freshState();
+	render();
+	const query = token ? `?token=${encodeURIComponent(token)}` : "";
+	// EventSource reconnects by itself; the server answers every connection with a fresh snapshot first.
+	source = new EventSource(`/api/agents/${agent.id}/events${query}`);
+	source.onmessage = (message) => {
+		for (const event of JSON.parse(message.data)) apply(event);
+		scheduleRender();
+	};
+	source.onerror = () => { $("status").textContent = "переподключение…"; };
+	loadAgents();
+}
+
+function addEntry(entry) {
+	if (!entry || state.ids.has(entry.id)) return;
+	state.ids.add(entry.id);
+	state.entries.push(entry);
+}
+
+function apply(e) {
+	if (e.parentToolCallId) return;
+	switch (e.type) {
+		case "snapshot":
+			state = freshState();
+			for (const entry of e.entries) addEntry(entry);
+			state.stream = e.generation?.message ? structuredClone(e.generation.message) : null;
+			for (const slot of e.tools) if (slot.status !== "done") state.tools.set(slot.callId, { name: slot.name, output: slot.output ?? "" });
+			state.busy = !!e.run;
+			state.inbox = e.inbox;
+			state.usage = e.usage;
+			state.failure = e.compactionFailure?.error ?? null;
+			break;
+		case "run_start": state.busy = true; state.failure = null; break;
+		case "run_end": state.busy = false; state.stream = null; state.tools.clear(); break;
+		case "message_start":
+			if (e.message.role === "assistant") state.stream = structuredClone(e.message);
+			break;
+		case "message_update": {
+			const msg = (state.stream ??= { role: "assistant", content: [] });
+			for (const c of e.changes) {
+				if (c.type === "message") { state.stream = structuredClone(c.message); continue; }
+				if (c.type.endsWith("_start") || c.type === "block") msg.content[c.contentIndex] = structuredClone(c.block);
+				else if (c.type === "text_delta") msg.content[c.contentIndex].text += c.delta;
+				else if (c.type === "thinking_delta") msg.content[c.contentIndex].thinking += c.delta;
+			}
+			break;
+		}
+		case "message_end":
+			if (e.entry.kind === "pi.assistant") state.stream = null;
+			addEntry(e.entry);
+			break;
+		case "entry_appended": addEntry(e.entry); break;
+		case "tool_execution_start": state.tools.set(e.toolCallId, { name: e.toolName, args: e.args, output: "" }); break;
+		case "tool_execution_update": {
+			const tool = state.tools.get(e.toolCallId);
+			if (!tool || !e.output) break;
+			tool.output = "set" in e.output ? e.output.set : tool.output.slice(e.output.trimStart ?? 0) + (e.output.append ?? "");
+			break;
+		}
+		case "tool_execution_end": state.tools.delete(e.toolCallId); addEntry(e.entry); break;
+		case "inbox_update": state.inbox = e.items; break;
+		case "auto_retry_start": state.retry = e.errorMessage; break;
+		case "auto_retry_end": state.retry = null; break;
+		case "task_failed": state.failure = e.message; break;
+		case "compaction_end": if (e.error) state.failure = `сжатие контекста: ${e.error}`; break;
+		case "usage_changed": state.usage = e.usage; break;
+	}
+}
+
+// ---- rendering (all agent output goes through textContent: it is untrusted) ----
+let pending = false;
+function scheduleRender() {
+	if (pending) return;
+	pending = true;
+	requestAnimationFrame(() => { pending = false; render(); });
+}
+
+function el(tag, className, text) {
+	const node = document.createElement(tag);
+	if (className) node.className = className;
+	if (text !== undefined) node.textContent = text;
+	return node;
+}
+
+function textOf(content) {
+	if (typeof content === "string") return content;
+	return (content ?? []).map((p) => (p.type === "text" ? p.text : p.type === "image" ? "[изображение]" : "")).join("\n");
+}
+
+function callSummary(block) {
+	const a = block.arguments ?? {};
+	return a.command ?? a.path ?? JSON.stringify(a);
+}
+
+function renderAssistant(message, box) {
+	for (const block of message.content ?? []) {
+		if (!block) continue;
+		if (block.type === "text" && block.text) box.append(el("div", "text", block.text));
+		else if (block.type === "thinking" && block.thinking) {
+			const d = el("details", "tool");
+			d.append(el("summary", "", "размышления"), el("pre", "", block.thinking));
+			box.append(d);
+		} else if (block.type === "toolCall") {
+			const call = el("div", "call");
+			call.append(el("b", "", `→ ${block.name} `), document.createTextNode(callSummary(block)));
+			box.append(call);
+		}
+	}
+}
+
+function renderEntry(entry) {
+	const box = el("div", "msg");
+	const message = entry.model?.[0];
+	switch (entry.kind) {
+		case "hub.message":
+			box.classList.add("user");
+			box.append(el("div", "author", entry.data.author), el("div", "text", entry.data.text));
+			return box;
+		case "pi.user":
+			box.classList.add("user");
+			box.append(el("div", "text", textOf(message?.content)));
+			return box;
+		case "pi.assistant":
+			renderAssistant(message, box);
+			if (!box.childElementCount) return null;
+			// A response cut off by a crash or an error is kept in the transcript; the retry follows as its own entry.
+			if (message?.stopReason === "aborted" || message?.stopReason === "error") {
+				box.classList.add("cut");
+				box.append(el("div", "notice", message.stopReason === "aborted" ? "ответ прерван, повторён ниже" : `ошибка модели: ${message.errorMessage ?? ""}`));
+			}
+			return box;
+		case "pi.tool-result": {
+			const d = el("details", `tool${message?.isError ? " err" : ""}`);
+			d.append(el("summary", "", `${message?.isError ? "ошибка" : "результат"}: ${message?.toolName ?? ""}`), el("pre", "", textOf(message?.content)));
+			box.append(d);
+			return box;
+		}
+		case "pi.compaction": return el("div", "notice", "— контекст сжат —");
+		case "pi.reset": return el("div", "notice", "— новый контекст —");
+		default: return null;
+	}
+}
+
+function cost(usage) {
+	let total = 0;
+	for (const bucket of [usage?.models, usage?.tools]) for (const u of Object.values(bucket ?? {})) total += u?.cost?.total ?? 0;
+	return total;
+}
+
+function render() {
+	const log = $("log");
+	if (!state) return;
+	const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+	const nodes = state.entries.map(renderEntry).filter(Boolean);
+	if (state.stream) {
+		const box = el("div", "msg");
+		renderAssistant(state.stream, box);
+		if (box.childElementCount) nodes.push(box);
+	}
+	for (const tool of state.tools.values()) {
+		const box = el("div", "msg running");
+		box.append(el("div", "call", `выполняется ${tool.name}${tool.args ? ": " + callSummary({ arguments: tool.args }) : ""}`), el("pre", "", tool.output || "…"));
+		nodes.push(box);
+	}
+	if (state.retry) nodes.push(el("div", "notice err-text", `повтор запроса к модели: ${state.retry}`));
+	if (state.failure) nodes.push(el("div", "notice err-text", state.failure));
+	if (!nodes.length) nodes.push(el("div", "empty", "Пока пусто. Напишите агенту — его команды выполняются в отдельном контейнере, проект лежит в /workspace."));
+	log.replaceChildren(...nodes);
+	if (atBottom) log.scrollTop = log.scrollHeight;
+
+	const parts = [state.busy ? "работает" : "свободен"];
+	if (state.inbox.length) parts.push(`в очереди: ${state.inbox.length}`);
+	const spent = cost(state.usage);
+	if (spent) parts.push(`$${spent.toFixed(4)}`);
+	$("status").textContent = parts.join(" · ");
+}
+
+// ---- sending ----
+async function send() {
+	const text = $("input").value.trim();
+	const author = $("me").value.trim();
+	if (!text || !current) return;
+	if (!author) { alert("Укажите своё имя слева"); $("me").focus(); return; }
+	const body = { author, text, requestId: crypto.randomUUID(), mode: $("steer").checked ? "steer" : "followUp" };
+	$("input").value = "";
+	// The same requestId on every attempt: if the first one reached the server, a retry does not send it twice.
+	for (let attempt = 0; ; attempt++) {
+		try {
+			await api(`/api/agents/${current.id}/messages`, { method: "POST", body: JSON.stringify(body) });
+			return;
+		} catch (error) {
+			if (attempt >= 2) { alert(`Не отправлено: ${error.message}`); $("input").value = text; return; }
+			await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+		}
+	}
+}
+
+$("composer").addEventListener("submit", (event) => { event.preventDefault(); send(); });
+$("input").addEventListener("keydown", (event) => {
+	if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); }
+});
+$("stop").addEventListener("click", () => current && api(`/api/agents/${current.id}/abort`, { method: "POST" }).catch((e) => alert(e.message)));
+
+loadAgents().then(() => {
+	const id = Number(location.hash.slice(1));
+	select(agents.find((a) => a.id === id));
+});
+setInterval(() => loadAgents().catch(() => {}), 5000);
+</script>
+</body>
+</html>
